@@ -29,7 +29,8 @@ int main(int argc, char* argv[]) {
         p[i] = NULL;
     }
 
-    printf("available_memory %d", available_memory());
+    print_statistics();
+    printf("available_memory %d\n", available_memory());
 
     void* before[100] = {NULL};
     void* after[100] = {NULL};
