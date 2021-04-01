@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #include "myalloc.h"
 #include "list.h"
 
@@ -14,6 +15,8 @@ struct Myalloc {
 };
 
 struct Myalloc myalloc;
+
+pthread_mutex_t lock;
 
 void initialize_allocator(int _size, enum allocation_algorithm _aalgorithm) {
     assert(_size > 0);
@@ -29,18 +32,34 @@ void initialize_allocator(int _size, enum allocation_algorithm _aalgorithm) {
 
     curr_memory += 8;
     myalloc.free_blocks = List_createNode(curr_memory);
-
 }
 
 void destroy_allocator() {
+    pthread_mutex_lock(&lock);
+
     free(myalloc.memory);
 
     // free other dynamic allocated memory to avoid memory leak
+    while (myalloc.alloc_blocks != NULL) {
+        struct nodeStruct *temp = myalloc.alloc_blocks->next;
+        free(myalloc.alloc_blocks);
+        myalloc.alloc_blocks = temp;
+    }
+
+    while (myalloc.free_blocks != NULL) {
+        struct nodeStruct *temp = myalloc.free_blocks->next;
+        free(myalloc.free_blocks);
+        myalloc.free_blocks = temp;
+    }
+
+    pthread_mutex_unlock(&lock);
 }
 
 // Allocate memory from myalloc.memory 
 // ptr = address of allocated memory
 void* allocate(int _size) {
+    pthread_mutex_lock(&lock);
+
     void* ptr = NULL;
     void* hptr = NULL;
     long alloc_block_size;
@@ -102,6 +121,7 @@ void* allocate(int _size) {
         fit_free_block = fit_free_block -> next;
     }
 
+    pthread_mutex_unlock(&lock);
     return ptr;
 }
 
@@ -109,7 +129,10 @@ void* allocate(int _size) {
 // _ptr points to the user-visible memory. The size information is
 // stored at (char*)_ptr - 8.
 void deallocate(void* _ptr) {
+    pthread_mutex_lock(&lock);
+
     if (_ptr == NULL) { 
+        pthread_mutex_unlock(&lock);
         return;
     }
 
@@ -145,11 +168,15 @@ void deallocate(void* _ptr) {
         }
         free_block = free_block->next;
     }
+
+    pthread_mutex_unlock(&lock);
 }
 
 // compact allocated memory
 // update _before, _after and compacted_size
 int compact_allocation(void** _before, void** _after) {
+    pthread_mutex_lock(&lock);
+
     int compacted_size = 0;
 
     long block_size;
@@ -199,10 +226,13 @@ int compact_allocation(void** _before, void** _after) {
     struct nodeStruct *compacted_free_block = List_createNode(myalloc.memory + offset + 8);
     List_insertTail(&myalloc.free_blocks, compacted_free_block);
 
+    pthread_mutex_unlock(&lock);
     return compacted_size;
 }
 
 int available_memory() {
+    pthread_mutex_lock(&lock);
+
     int available_memory_size = 0;
     // Calculate available memory size
     struct nodeStruct *f = myalloc.free_blocks;
@@ -211,10 +241,14 @@ int available_memory() {
 
         f = f->next;
     }
+
+    pthread_mutex_unlock(&lock);
     return available_memory_size;
 }
 
 void print_statistics() {
+    pthread_mutex_lock(&lock);
+
     int allocated_size = 0;
     int allocated_chunks = 0;
     int free_size = 0;
@@ -255,4 +289,6 @@ void print_statistics() {
     printf("Free chunks = %d\n", free_chunks);
     printf("Largest free chunk size = %d\n", largest_free_chunk_size);
     printf("Smallest free chunk size = %d\n", smallest_free_chunk_size);
+
+    pthread_mutex_unlock(&lock);
 }
